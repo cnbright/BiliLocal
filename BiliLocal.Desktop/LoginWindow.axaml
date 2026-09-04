@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="BiliLocal.Desktop.LoginWindow" Title="登录 Bilibili" Width="500" Height="575" CanResize="False" WindowStartupLocation="CenterOwner">
+ <Grid Margin="28" RowDefinitions="Auto,Auto,*,Auto,Auto">
+  <TextBlock Classes="heading" Text="登录 Bilibili"/>
+  <TextBlock Grid.Row="1" Classes="muted" Margin="0,12,0,20" Text="连接账号，获取你有权限观看的画质。"/>
+  <TabControl Name="LoginTabs" Grid.Row="2" SelectionChanged="TabChanged">
+   <TabItem Header="扫码登录"><StackPanel Spacing="12" Margin="0,18,0,0"><Border Background="White" CornerRadius="12" HorizontalAlignment="Center" Padding="10"><Image Name="QrImage" Width="186" Height="186"/></Border><TextBlock Name="QrLabel" Text="请点击生成二维码" HorizontalAlignment="Center" TextWrapping="Wrap"/><Button Name="QrButton" Content="生成 / 刷新二维码" Click="QrClick" HorizontalAlignment="Center"/></StackPanel></TabItem>
+   <TabItem Header="Cookie 登录"><StackPanel Spacing="12" Margin="0,18,0,0"><TextBlock Text="粘贴 Cookie 请求头或 cookies.txt 内容"/><TextBox Name="CookieInput" AcceptsReturn="True" TextWrapping="Wrap" Height="150" Watermark="SESSDATA=…; bili_jct=…; DedeUserID=…"/><TextBlock Classes="muted" TextWrapping="Wrap" Text="在已登录的 Bilibili 页面，使用浏览器开发者工具复制请求头中的 Cookie。"/><Button Name="CookieButton" Classes="primary" Content="验证并登录" Click="CookieClick" HorizontalAlignment="Stretch"/></StackPanel></TabItem>
+   <TabItem Header="账号登录"><StackPanel Spacing="18" Margin="0,35,0,0"><TextBlock Text="在 Bilibili 官方窗口登录" FontSize="18" HorizontalAlignment="Center"/><TextBlock Classes="muted" TextAlignment="Center" TextWrapping="Wrap" Text="打开独立浏览器窗口，选择密码或短信登录。&#10;完成验证后，账号会自动同步到桌面应用。"/><Button Name="BrowserButton" Classes="primary" Content="打开官方登录窗口 ↗" Click="BrowserClick" HorizontalAlignment="Center"/></StackPanel></TabItem>
+  </TabControl>
+  <TextBlock Grid.Row="3" Name="MessageText" Foreground="#C26586" TextWrapping="Wrap" Margin="0,14"/>
+  <StackPanel Grid.Row="4" Spacing="12"><TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="Cookie 仅存于内存，退出应用后需重新登录。关闭窗口会取消未完成的登录。"/><Button Name="LogoutButton" Content="退出当前账号" Click="LogoutClick" HorizontalAlignment="Center"/></StackPanel>
+ </Grid>
+</Window>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault><ApplicationManifest>app.manifest</ApplicationManifest></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../BiliLocal.Core/BiliLocal.Core.csproj" /></ItemGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Assets\BiliLocal.ico</ApplicationIcon>
+    <Product>BiliLocal</Product>
+    <Description>BiliLocal 视频下载工作台</Description>
+    <Version>1.0.1</Version>
+  </PropertyGroup>
+  <ItemGroup><AvaloniaResource Include="Assets/BiliLocal.ico" /><AvaloniaResource Include="Assets/BiliLocal.png" /></ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64' Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows')))">
+    <Content Include="../vendor/ffmpeg/win-x64/*" Link="tools/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequireBundledFFmpeg" BeforeTargets="PrepareForBuild" Condition="'$(RuntimeIdentifier)' == 'win-x64' Or ('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows')))">
+    <Error Condition="!Exists('../vendor/ffmpeg/win-x64/ffmpeg.exe')" Text="Missing bundled FFmpeg. Run setup-ffmpeg.ps1 in the repository root before building." />
+  </Target>
+  <ItemGroup><PackageReference Include="Avalonia" Version="11.3.20" /><PackageReference Include="Avalonia.Desktop" Version="11.3.20" /><PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" /></ItemGroup>
+</Project>
