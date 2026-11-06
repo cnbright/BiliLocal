@@ -39,7 +39,7 @@ public sealed record VideoCollection(string Id, string Name, string Kind, int Co
 public sealed record VideoPage(string Uid, string Name, IReadOnlyList<VideoItem> Items, int Total, int Page);
 public sealed record VideoPart(long Cid, int Page, string Title);
 public sealed record VideoDetails(string Bvid, string Title, IReadOnlyList<VideoPart> Parts);
-public sealed record DownloadOptions(string Quality = "best", string Mode = "video", bool AllParts = true);
+public sealed record DownloadOptions(string Quality = "best", string Mode = "video", bool AllParts = true, IReadOnlyList<VideoPart>? SelectedParts = null);
 
 public sealed class DownloadJob
 {
@@ -50,6 +50,7 @@ public sealed class DownloadJob
     public string Quality { get; set; } = "best";
     public string Mode { get; set; } = "video";
     [JsonPropertyName("all_parts")] public bool AllParts { get; set; } = true;
+    public List<VideoPart>? SelectedParts { get; set; }
     public string Status { get; set; } = "queued";
     public double Progress { get; set; }
     public double Speed { get; set; }
@@ -64,7 +65,10 @@ public sealed class DownloadJob
     [JsonIgnore] public bool HasError => !string.IsNullOrWhiteSpace(Error);
     [JsonIgnore] public string DisplayTitle => string.IsNullOrWhiteSpace(Part) ? Title : Part;
     [JsonIgnore] public string StateLabel => Status switch { "queued" => "等待中", "downloading" => "下载中", "processing" => "合并 / 转换中", "completed" => "已完成", "failed" => "失败", "paused" or "cancelled" => "已暂停", "pausing" or "cancelling" => "暂停中", _ => Status };
-    [JsonIgnore] public string Info => $"{Bvid}  ·  {(Mode == "audio" ? "MP3" : "MP4")}  ·  {(Quality == "best" ? "最高可用" : Quality + "P 上限")}  ·  {(AllParts ? "全部分 P" : "首个分 P")}";
+    [JsonIgnore] public string PartsLabel => SelectedParts is { } parts
+        ? $"已选 {parts.Count} 个分 P · {string.Join("、", parts.Take(6).Select(p => $"P{p.Page}"))}{(parts.Count > 6 ? "…" : "")}"
+        : AllParts ? "全部分 P" : "首个分 P";
+    [JsonIgnore] public string Info => $"{Bvid}  ·  {(Mode == "audio" ? "MP3" : "MP4")}  ·  {(Quality == "best" ? "最高可用" : Quality + "P 上限")}  ·  {PartsLabel}";
     [JsonIgnore] public string ProgressLabel => $"{StateLabel}  {Progress:0}%  {(Speed > 0 ? $"· {Speed / 1048576:0.00} MB/s" : "")}";
 }
 public sealed record TransferProgress(double Percent, double Speed, string Part, bool Processing = false);

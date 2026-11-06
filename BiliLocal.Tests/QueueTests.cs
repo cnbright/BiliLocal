@@ -111,6 +111,46 @@ public sealed class QueueTests
         Assert.Throws<ArgumentOutOfRangeException>(() => h.Queue.SetConcurrency(7)); Assert.Equal(4, h.Queue.Concurrency);
         reloaded.SetDownloads(Path.Combine(h.Paths.Root, "next")); Assert.Equal(4, new AppPaths(h.Paths.Root).DownloadConcurrency);
     }
+    [Fact] public async Task SelectedPartsDeduplicateByCidAndSurviveRestartAndResume()
+    {
+        await using var h = new Harness(1);
+        h.Queue.PauseAll();
+        var parts = new List<VideoPart> { new(103, 3, "第三 P"), new(102, 2, "第二 P") };
+        Assert.Equal((1, 0), h.Queue.Add([Video(1)], new(SelectedParts: parts)));
+        Assert.Equal((0, 1), h.Queue.Add([Video(1)], new(SelectedParts: [parts[1], parts[0], parts[1]])));
+        Assert.Equal((1, 0), h.Queue.Add([Video(1)], new(SelectedParts: [parts[0]])));
+        parts.Clear();
+        var original = h.Queue.Snapshot().Single(j => j.SelectedParts!.Count == 2);
+        Assert.Equal(new long[] { 102, 103 }, original.SelectedParts!.Select(p => p.Cid));
+        Assert.Contains("P2、P3", original.Info);
+        Assert.False(original.AllParts);
+        original.SelectedParts!.Clear();
+        await h.Queue.DisposeAsync();
+
+        await using var restored = new DownloadQueue(h.Paths, h.Source);
+        var job = restored.Snapshot().Single(j => j.Id == original.Id);
+        Assert.Equal(new long[] { 102, 103 }, job.SelectedParts!.Select(p => p.Cid));
+        Assert.Equal("paused", job.Status);
+        restored.Start(job.Id);
+        var resumed = await h.Source.Next();
+        Assert.Equal(new long[] { 102, 103 }, resumed.Job.SelectedParts!.Select(p => p.Cid));
+        resumed.Complete();
+        await Until(() => restored.Snapshot().Single(j => j.Id == job.Id).Status == "completed");
+    }
+
+    [Fact] public async Task MixedVideoSelectionsValidateBeforeAddingAnyJobs()
+    {
+        await using var h = new Harness(1);
+        h.Queue.PauseAll();
+        var first = new DownloadOptions(SelectedParts: [new(102, 2, "第二 P")]);
+        Assert.Throws<BiliException>(() => h.Queue.Add([(Video(1), first), (Video(2), new(SelectedParts: []))]));
+        Assert.Empty(h.Queue.Snapshot());
+        Assert.Throws<BiliException>(() => h.Queue.Add([Video(1)], new(SelectedParts: [new(0, 1, "无效")])));
+        Assert.Equal((2, 0), h.Queue.Add([(Video(1), first), (Video(2), new(SelectedParts: [new(203, 3, "第三 P")]))]));
+        Assert.Equal(102, h.Queue.Snapshot().Single(j => j.Bvid == Video(1).Bvid).SelectedParts!.Single().Cid);
+        Assert.Equal(203, h.Queue.Snapshot().Single(j => j.Bvid == Video(2).Bvid).SelectedParts!.Single().Cid);
+    }
+
     private sealed class Attempt(DownloadJob job, IProgress<TransferProgress> progress, bool holdCleanup)
     {
         public DownloadJob Job { get; } = job;

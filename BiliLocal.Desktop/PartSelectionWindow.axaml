@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="BiliLocal.Desktop.PartSelectionWindow" Title="选择分 P"
+        Width="660" Height="560" MinWidth="460" MinHeight="360" WindowStartupLocation="CenterOwner">
+ <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+  <StackPanel Spacing="6" Margin="0,0,0,14">
+   <TextBlock Text="选择要下载的分 P" FontSize="20" FontWeight="SemiBold"/>
+   <TextBlock Text="勾选一个或多个分 P，确认后加入下载队列。" Classes="muted" TextWrapping="Wrap"/>
+  </StackPanel>
+  <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*" Margin="0,0,0,12">
+   <Button Name="SelectAllButton" Content="全选" Click="SelectAllClick"/>
+   <Button Name="ClearButton" Grid.Column="1" Content="清空选择" Click="ClearClick" Margin="8,0"/>
+   <TextBlock Name="SelectionSummary" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+  </Grid>
+  <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+   <ItemsControl ItemsSource="{Binding Videos}">
+    <ItemsControl.ItemTemplate>
+     <DataTemplate>
+      <Border Background="White" BorderBrush="#E5E9F1" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+       <StackPanel Spacing="8">
+        <TextBlock Text="{Binding Details.Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding Details.Bvid}" Classes="muted"/>
+        <ItemsControl ItemsSource="{Binding Parts}">
+         <ItemsControl.ItemTemplate>
+          <DataTemplate>
+           <CheckBox IsChecked="{Binding Selected, Mode=TwoWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="4,6">
+            <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+           </CheckBox>
+          </DataTemplate>
+         </ItemsControl.ItemTemplate>
+        </ItemsControl>
+       </StackPanel>
+      </Border>
+     </DataTemplate>
+    </ItemsControl.ItemTemplate>
+   </ItemsControl>
+  </ScrollViewer>
+  <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,14,0,0">
+   <Button Content="取消" Click="CancelClick"/>
+   <Button Name="ConfirmButton" Content="下载所选分 P" Classes="primary" Click="ConfirmClick" IsEnabled="False"/>
+  </StackPanel>
+ </Grid>
+</Window>

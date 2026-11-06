@@ -41,6 +41,15 @@ public sealed class MediaDownloader(BiliClient bili, AppPaths paths) : IMediaDow
             throw new BiliException("Bilibili 返回无效媒体地址。");
         return uri;
     }
+    public static IReadOnlyList<VideoPart> SelectParts(VideoDetails details, DownloadJob job)
+    {
+        if (job.SelectedParts == null) return job.AllParts ? details.Parts : details.Parts.Take(1).ToList();
+        var selected = job.SelectedParts.Select(p => p.Cid).ToHashSet();
+        if (selected.Count == 0) throw new BiliException("请至少选择一个分 P。");
+        var parts = details.Parts.Where(p => selected.Contains(p.Cid)).ToList();
+        if (parts.Count != selected.Count) throw new BiliException("所选分 P 已失效或被移除，请重新选择分 P 后添加任务。");
+        return parts;
+    }
     public async Task<IReadOnlyList<string>> DownloadAsync(DownloadJob job, IProgress<TransferProgress> progress, CancellationToken ct)
     {
         var ffmpeg = AppPaths.FindTool("ffmpeg") ?? throw new BiliException("内置 FFmpeg 缺失，请重新解压完整软件包。");
@@ -50,7 +59,7 @@ public sealed class MediaDownloader(BiliClient bili, AppPaths paths) : IMediaDow
         var folder = Directory.Exists(legacyFolder) ? legacyFolder : paths.JobCache(job.Id);
         Directory.CreateDirectory(folder);
         var details = await bili.GetDetailsAsync(job.Bvid, ct);
-        var parts = job.AllParts ? details.Parts : details.Parts.Take(1).ToList();
+        var parts = SelectParts(details, job);
         if (parts.Count == 0) throw new BiliException("该视频没有可下载的分 P。");
         List<string> output = [];
         using var client = bili.CreateHttpClient();

@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly AppPaths paths;
     private readonly Core.DownloadQueue queue;
     private readonly VideoLibrary library;
+    private readonly Func<string, CancellationToken, Task<VideoDetails>> getDetailsAsync;
     private readonly MainViewModel vm = new();
     private readonly Dictionary<string, VideoItem> selected = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(700) };
@@ -32,6 +33,9 @@ public partial class MainWindow : Window
     {
         var workspace = new AppPaths();
         var smoke = args.Contains("--smoke");
+        getDetailsAsync = smoke
+            ? (bvid, ct) => Task.FromResult(new VideoDetails(bvid, "分 P 选择测试 · 完整课程", Enumerable.Range(1, 12).Select(i => new VideoPart(100 + i, i, $"第 {i} 课 · 视频分 P 标题")).ToList()))
+            : bili.GetDetailsAsync;
         paths = smoke ? new AppPaths(Path.Combine(workspace.Root, "artifacts", "ui-smoke-data")) : workspace;
         var artifacts = Path.Combine(workspace.Root, "artifacts");
         library = new(smoke ? new SmokeLibrarySource() : bili);
@@ -106,6 +110,49 @@ public partial class MainWindow : Window
             Width = 1240; Height = 850;
             var directoryWindow = BuildDownloadDirectoryWindow(); directoryWindow.Show(this);
             await Task.Delay(200); Capture(directoryWindow, "download-directory.png"); directoryWindow.Close();
+            async Task<PartSelectionWindow> WaitForPartSelection()
+            {
+                using var timeout = new CancellationTokenSource(5000);
+                while (!OwnedWindows.OfType<PartSelectionWindow>().Any()) await Task.Delay(25, timeout.Token);
+                await Task.Delay(100, timeout.Token);
+                return OwnedWindows.OfType<PartSelectionWindow>().Single();
+            }
+            queue.PauseAll();
+            var partVideo = new VideoItem { Bvid = "BV1xx411c7mD", Title = "分 P 选择测试" };
+            SelectPartsClick(new Button { Tag = partVideo }, new RoutedEventArgs());
+            var partWindow = await WaitForPartSelection();
+            if (partWindow.FindControl<Button>("ConfirmButton")!.IsEnabled) throw new InvalidOperationException("未选择分 P 时仍可确认。");
+            partWindow.FindControl<Button>("SelectAllButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (partWindow.Videos[0].Parts.Any(p => !p.Selected)) throw new InvalidOperationException("分 P 全选失败。");
+            partWindow.FindControl<Button>("ClearButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (partWindow.Videos[0].Parts.Any(p => p.Selected)) throw new InvalidOperationException("分 P 清空失败。");
+            var secondPartBox = partWindow.GetVisualDescendants().OfType<CheckBox>().Single(box => box.DataContext is PartSelectionRow row && row.Part.Cid == 102);
+            secondPartBox.IsChecked = true;
+            partWindow.Width = 460; partWindow.Height = 360;
+            await Task.Delay(100); Capture(partWindow, "parts-single-compact.png");
+            partWindow.FindControl<Button>("ConfirmButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitForSearch(() => queue.Snapshot().Count == 1);
+            if (queue.Snapshot().Single().SelectedParts?.Single().Cid != 102) throw new InvalidOperationException("单选分 P 入队失败。");
+            queue.DeleteAll(); queue.PauseAll(); vm.Library = true;
+            ReplaceVideos([partVideo, new() { Bvid = "BV13x41117TL", Title = "第二个视频" }, new() { Bvid = "BV0000000003", Title = "保留选择的视频" }]);
+            SelectPageClick(null, new RoutedEventArgs()); PartsModeBox.SelectedIndex = 2;
+            DownloadButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            partWindow = await WaitForPartSelection();
+            partWindow.Close();
+            await WaitForSearch(() => !vm.Busy);
+            if (queue.Snapshot().Count != 0 || selected.Count != 3) throw new InvalidOperationException("取消分 P 选择后状态错误。");
+            DownloadButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            partWindow = await WaitForPartSelection();
+            partWindow.Videos[0].Parts[1].Selected = true; partWindow.Videos[0].Parts[2].Selected = true;
+            partWindow.Videos[1].Parts[3].Selected = true;
+            await Task.Delay(100); Capture(partWindow, "parts-multiple.png");
+            partWindow.FindControl<Button>("ConfirmButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitForSearch(() => queue.Snapshot().Count == 2);
+            var selectedJob = queue.Snapshot().Single(j => j.Bvid == partVideo.Bvid);
+            if (selectedJob.SelectedParts == null || !selectedJob.SelectedParts.Select(p => p.Cid).SequenceEqual(new long[] { 102, 103 }) || selected.Count != 1)
+                throw new InvalidOperationException("批量分 P 选择入队失败。");
+            await Task.Delay(100); Capture(this, "parts-queue.png");
+            queue.DeleteAll(); ClearClick(null, new RoutedEventArgs()); PartsModeBox.SelectedIndex = 0; vm.Library = true;
             var bundled = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
             if (OperatingSystem.IsWindows())
             {
@@ -146,7 +193,7 @@ public partial class MainWindow : Window
             login.FindControl<TabControl>("LoginTabs")!.SelectedIndex = 1;
             await Task.Delay(300); Capture(login, "cookie-login.png");
             login.Close();
-            await File.WriteAllTextAsync(Path.Combine(artifacts, "ui-smoke.txt"), "PASS: keyword automatic search, search button, Enter key, keyword/type intersection, clearing keyword, no-match and filtered pagination, window icons, bundled browser login driver, compact layout, sidebar collapse/expand, directory dialog, bundled FFmpeg conversion and cancellation/handle release, filters, cross-page selection, parallel queue, start/pause/delete all buttons, individual start/delete, removal from UI, minimum queue width, login tabs");
+            await File.WriteAllTextAsync(Path.Combine(artifacts, "ui-smoke.txt"), "PASS: keyword automatic search, search button, Enter key, keyword/type intersection, clearing keyword, no-match and filtered pagination, window icons, bundled browser login driver, compact layout, sidebar collapse/expand, directory dialog, bundled FFmpeg conversion and cancellation/handle release, filters, cross-page selection, parallel queue, start/pause/delete all buttons, individual start/delete, removal from UI, minimum queue width, login tabs, single/multiple part selection, select/clear all parts, cancel part selection, batch part selection queue");
             Close();
         };
     }
@@ -322,6 +369,7 @@ public partial class MainWindow : Window
     private void ModeChanged(object? sender, SelectionChangedEventArgs e) { if (QualityBox != null && ModeBox != null) QualityBox.IsEnabled = ModeBox.SelectedIndex == 0; }
     private async void DirectClick(object? sender, RoutedEventArgs e)
     {
+        if (vm.Busy) return;
         keywordTimer.Stop();
         var input = new TextBox { AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Height = 210, Watermark = "每行一个 BV 号或完整视频链接，最多 1000 个" };
         var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Avalonia.Media.Brushes.IndianRed };
@@ -354,17 +402,53 @@ public partial class MainWindow : Window
         library.Clear();
         vm.Account = bili.User is { } user ? user.Name + (user.Vip ? " · 大会员" : " · 已登录") : "尚未登录";
     }
-    private void DownloadClick(object? sender, RoutedEventArgs e)
+    private async void DownloadClick(object? sender, RoutedEventArgs e)
+        => await RunAsync(() => AddDownloadsAsync(selected.Values.ToList(), PartsModeBox.SelectedIndex == 2));
+
+    private async void SelectPartsClick(object? sender, RoutedEventArgs e)
     {
+        if (sender is Button { Tag: VideoItem video })
+            await RunAsync(() => AddDownloadsAsync([video], selectParts: true));
+    }
+
+    private async Task AddDownloadsAsync(IReadOnlyList<VideoItem> videos, bool selectParts)
+    {
+        if (vm.Busy) return;
+        if (videos.Count == 0) throw new BiliException("请先选择要下载的视频。");
+        if (AppPaths.FindTool("ffmpeg") is null) throw new BiliException("内置 FFmpeg 缺失，请重新解压完整软件包。");
+        var quality = new[] { "best", "2160", "1080", "720", "480", "360" }[Math.Clamp(QualityBox.SelectedIndex, 0, 5)];
+        var options = new DownloadOptions(quality, ModeBox.SelectedIndex == 1 ? "audio" : "video", PartsModeBox.SelectedIndex != 1);
+        var downloads = videos.Select(video => (Video: video, Options: options)).ToList();
+        keywordTimer.Stop();
+        search?.Cancel(); search?.Dispose(); search = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var ct = search.Token;
+        vm.Busy = true;
         try
         {
-            if (AppPaths.FindTool("ffmpeg") is null) throw new BiliException("内置 FFmpeg 缺失，请重新解压完整软件包。");
-            var quality = new[] { "best", "2160", "1080", "720", "480", "360" }[Math.Clamp(QualityBox.SelectedIndex, 0, 5)];
-            var result = queue.Add(selected.Values, new(quality, ModeBox.SelectedIndex == 1 ? "audio" : "video", AllPartsBox.IsChecked == true));
+            if (selectParts)
+            {
+                var details = new List<VideoDetails>();
+                foreach (var video in videos)
+                {
+                    vm.Message = $"正在获取分 P 列表（{details.Count + 1}/{videos.Count}）…";
+                    var detail = await getDetailsAsync(video.Bvid, ct);
+                    if (detail.Parts.Count == 0) throw new BiliException($"{detail.Title} 没有可下载的分 P。");
+                    details.Add(detail);
+                }
+                ct.ThrowIfCancellationRequested();
+                vm.Message = "请选择需要下载的分 P。";
+                var window = new PartSelectionWindow(details, options);
+                downloads = await window.ShowDialog<List<(VideoItem Video, DownloadOptions Options)>?>(this);
+                if (downloads == null) { vm.Message = "已取消选择分 P。"; return; }
+            }
+            ct.ThrowIfCancellationRequested();
+            var result = queue.Add(downloads);
             vm.Message = $"已加入 {result.Added} 个任务，跳过 {result.Skipped} 个重复任务。";
-            ClearClick(null, e); vm.Library = false; RefreshQueue();
+            foreach (var entry in downloads) selected.Remove(entry.Video.Bvid);
+            foreach (var row in vm.Videos) row.Video.Selected = selected.ContainsKey(row.Video.Bvid);
+            UpdateSelection(); vm.Library = false; RefreshQueue();
         }
-        catch (Exception ex) { vm.Message = ex.Message; }
+        finally { vm.Busy = false; }
     }
     private void RefreshQueue()
     {

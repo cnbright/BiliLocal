@@ -48,7 +48,13 @@ public sealed class DownloadQueue : IAsyncDisposable
         lock (gate) return jobs.Values.OrderByDescending(j => j.Created).Select(Clone).ToList();
     }
     private static DownloadJob Clone(DownloadJob job) => JsonSerializer.Deserialize<DownloadJob>(JsonSerializer.Serialize(job, Json), Json)!;
-    private static bool Same(DownloadJob a, DownloadJob b) => a.Bvid == b.Bvid && a.Mode == b.Mode && a.Quality == b.Quality && a.AllParts == b.AllParts;
+    private static bool Same(DownloadJob a, DownloadJob b)
+    {
+        if (a.Bvid != b.Bvid || a.Mode != b.Mode || a.Quality != b.Quality) return false;
+        if (a.SelectedParts != null && b.SelectedParts != null)
+            return a.SelectedParts.Select(p => p.Cid).ToHashSet().SetEquals(b.SelectedParts.Select(p => p.Cid));
+        return a.SelectedParts == null && b.SelectedParts == null && a.AllParts == b.AllParts;
+    }
     private void Save()
     {
         var file = Path.Combine(paths.Data, "jobs.json");
@@ -66,17 +72,31 @@ public sealed class DownloadQueue : IAsyncDisposable
         }
     }
     public (int Added, int Skipped) Add(IEnumerable<VideoItem> videos, DownloadOptions options)
+        => Add(videos.Select(video => (video, options)));
+
+    public (int Added, int Skipped) Add(IEnumerable<(VideoItem Video, DownloadOptions Options)> downloads)
     {
-        if (options.Mode is not ("video" or "audio") || options.Quality is not ("best" or "2160" or "1080" or "720" or "480" or "360")) throw new BiliException("无效下载选项。");
-        var batch = videos.ToList();
-        if (batch.Count is < 1 or > 1000 || batch.Any(v => !BiliClient.IsBvid(v.Bvid))) throw new BiliException("请选择 1–1000 个有效视频。");
+        var batch = downloads.Select(entry =>
+        {
+            var (video, options) = entry;
+            if (options.Mode is not ("video" or "audio") || options.Quality is not ("best" or "2160" or "1080" or "720" or "480" or "360")) throw new BiliException("无效下载选项。");
+            var parts = options.SelectedParts?.DistinctBy(p => p.Cid).OrderBy(p => p.Page).ToList();
+            if (parts != null && (parts.Count == 0 || parts.Any(p => p.Cid <= 0 || p.Page <= 0))) throw new BiliException("请至少选择一个有效分 P。");
+            return new DownloadJob
+            {
+                Bvid = video.Bvid, Title = string.IsNullOrWhiteSpace(video.Title) ? video.Bvid : video.Title,
+                Quality = options.Quality, Mode = options.Mode, AllParts = parts == null && options.AllParts,
+                SelectedParts = parts, OutputDirectory = paths.Downloads
+            };
+        }).ToList();
+        if (batch.Count is < 1 or > 1000 || batch.Any(j => !BiliClient.IsBvid(j.Bvid))) throw new BiliException("请选择 1–1000 个有效视频。");
         var added = 0; var skipped = 0;
         lock (gate)
         {
             EnsureOpen();
-            foreach (var v in batch)
+            foreach (var job in batch)
             {
-                var job = new DownloadJob { Bvid = v.Bvid, Title = string.IsNullOrWhiteSpace(v.Title) ? v.Bvid : v.Title, Quality = options.Quality, Mode = options.Mode, AllParts = options.AllParts, OutputDirectory = paths.Downloads, Status = allPaused ? "paused" : "queued" };
+                job.Status = allPaused ? "paused" : "queued";
                 if (jobs.Values.Any(j => j.Status != "completed" && Same(j, job))) { skipped++; continue; }
                 jobs[job.Id] = job; added++;
             }
